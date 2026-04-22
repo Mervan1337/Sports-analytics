@@ -241,48 +241,59 @@ top10    <- rated %>% arrange(FIS_per_fo) %>% slice_tail(n = 10)
 leaderboard_data <- bind_rows(bottom10, top10) %>%
   mutate(
     label     = factor(as.character(playerid), levels = as.character(playerid)),
-    bar_color = ifelse(FIS_per_fo >= 0, "positive", "negative")
+    bar_color = ifelse(FIS_per_fo >= 0, "positive", "negative"),
+    txt_hjust = ifelse(FIS_per_fo >= 0, -0.1, 1.1)
   )
 
-p_bar <- ggplot(leaderboard_data, aes(x = FIS_per_fo, y = label, fill = bar_color)) +
+# 6 annotated players: top/mid/bottom of each half
+select_three <- function(idx) {
+  n <- length(idx)
+  if (n == 0) return(integer(0))
+  if (n <= 3) return(idx)
+  c(idx[1], idx[ceiling(n / 2)], idx[n])
+}
+annot_idx_pr <- unique(c(select_three(1:10), select_three(11:20)))
+fo_annot_pr  <- leaderboard_data[annot_idx_pr, ] %>%
+  filter(abs(FIS_per_fo) >= 0.001) %>%
+  mutate(fo_label = sprintf("%.0f", 1 / abs(FIS_per_fo)))
+
+p_bar_base <- ggplot(leaderboard_data, aes(x = FIS_per_fo, y = label, fill = bar_color)) +
   geom_col(width = 0.75, show.legend = FALSE) +
+  geom_hline(yintercept = 10.5, color = "gray50", linewidth = 0.6, linetype = "dashed") +
   geom_vline(xintercept = 0, color = "black", linewidth = 0.6) +
-  geom_text(
-    aes(
-      label = sprintf("%.0f%% win", raw_win_rate * 100),
-      hjust = ifelse(FIS_per_fo >= 0, -0.1, 1.1)
-    ),
-    size = 2.8, color = "gray20"
-  ) +
-  scale_fill_manual(values = c("positive" = "#00b894", "negative" = "#d63031")) +
-  scale_x_continuous(expand = expansion(mult = c(0.18, 0.18))) +
-  labs(
-    title    = "Faceoff Impact Score — Player Ranking",
-    subtitle = sprintf(
-      "FIS combines xG generated (when won) vs xG conceded (when lost), weighted by game situation · min. %d faceoffs",
-      MIN_FO
-    ),
-    x = "FIS per faceoff  (positive = net benefit to team)", y = NULL
-  ) +
+  scale_fill_manual(values = c("positive" = "#00b894", "negative" = "#8B1A1A")) +
+  scale_x_continuous(expand = expansion(mult = c(0.22, 0.22))) +
+  labs(x = "FIS per faceoff  (positive = net benefit to team)", y = NULL) +
   theme_minimal(base_size = 12) +
   theme(
-    plot.title         = element_text(face = "bold", size = 14),
-    plot.subtitle      = element_text(size = 9, color = "gray35"),
-    panel.grid.major.y = element_blank(),
-    axis.text.y        = element_text(size = 9)
+    text               = element_text(face = "bold", color = "gray10"),
+    panel.grid.major.y = element_blank()
   )
 
+p_bar <- p_bar_base +
+  geom_text(
+    aes(label = sprintf("%.0f%% win", raw_win_rate * 100), hjust = txt_hjust),
+    size = 3.2, color = "black", fontface = "bold"
+  )
+
+if (nrow(fo_annot_pr) > 0) {
+  fo_pos_pr <- filter(fo_annot_pr, FIS_per_fo >= 0)
+  fo_neg_pr <- filter(fo_annot_pr, FIS_per_fo <  0)
+  if (nrow(fo_pos_pr) > 0)
+    p_bar <- p_bar + geom_text(data = fo_pos_pr,
+      aes(x = FIS_per_fo / 2, y = label, label = fo_label),
+      size = 3.0, color = "black", fontface = "bold", hjust = 0.5, inherit.aes = FALSE)
+  if (nrow(fo_neg_pr) > 0)
+    p_bar <- p_bar + geom_text(data = fo_neg_pr,
+      aes(x = FIS_per_fo / 2, y = label, label = fo_label),
+      size = 3.0, color = "white", fontface = "bold", hjust = 0.5, inherit.aes = FALSE)
+}
+
 # ── 9. PLOT 2: WIN RATE VS FIS ────────────────────────────────────────────────
-p_scatter <- ggplot(rated, aes(x = raw_win_rate, y = FIS_per_fo)) +
+p_scatter_base <- ggplot(rated, aes(x = raw_win_rate, y = FIS_per_fo)) +
   geom_hline(yintercept = 0,   color = "gray50", linetype = "dashed") +
   geom_vline(xintercept = 0.5, color = "gray50", linetype = "dashed") +
   geom_point(aes(color = quadrant, size = total_faceoffs), alpha = 0.85) +
-  geom_text(
-    data = filter(rated, outlier),
-    aes(label = as.character(playerid)),
-    size = 2.8, color = "gray15", vjust = -0.7,
-    check_overlap = TRUE
-  ) +
   scale_color_manual(
     values = c(
       "High win% + High FIS" = "#00b894",
@@ -293,35 +304,32 @@ p_scatter <- ggplot(rated, aes(x = raw_win_rate, y = FIS_per_fo)) +
     name = NULL, drop = FALSE
   ) +
   scale_size_continuous(range = c(2, 5), name = "Faceoffs taken") +
-  labs(
-    title    = "Does winning more faceoffs mean more value?",
-    subtitle = sprintf(
-      "Spearman ρ = %.2f — win%% explains only %.0f%% of the variation in impact",
-      cor_raw, cor_raw^2 * 100
-    ),
-    x = "Faceoff win rate", y = "Faceoff Impact Score (FIS) per faceoff"
-  ) +
+  labs(x = "Faceoff win rate", y = "Faceoff Impact Score (FIS) per faceoff") +
   theme_minimal(base_size = 12) +
   theme(
-    plot.title      = element_text(face = "bold", size = 14),
-    plot.subtitle   = element_text(size = 9, color = "gray35"),
-    #legend.position = "bottom"
+    text            = element_text(face = "bold", color = "gray10"),
+    legend.position = "bottom",
+    legend.box      = "vertical"
   ) +
   guides(
-    color = guide_legend(nrow = 1, override.aes = list(alpha = 1)), # Forces 1 row
-    size = guide_legend(nrow = 1)                                   # Forces 1 row
+    color = guide_legend(nrow = 1, override.aes = list(alpha = 1)),
+    size  = guide_legend(nrow = 1)
+  )
+
+p_scatter <- p_scatter_base +
+  geom_text(
+    data = filter(rated, outlier),
+    aes(label = as.character(playerid)),
+    size = 2.8, color = "gray10", fontface = "bold", vjust = -1.1,
+    check_overlap = TRUE
   )
 
 # ── 10. COMBINE AND SAVE ──────────────────────────────────────────────────────
 combined <- (p_bar | p_scatter) +
-  plot_layout(guides = "collect") +
-  plot_annotation(
-    title = "Faceoff Player Ratings — SHL",
-    theme = theme(plot.title = element_text(size = 16, face = "bold"))
-  ) &
+  plot_layout(guides = "collect") &
   theme(
     legend.position = "bottom",       # Moves collected legend to the bottom
-    legend.box = "horizontal",        # Places size and color legends side-by-side
+    legend.box = "vertical",           # Stacks size and color legends
     legend.justification = "center",  # Centers everything perfectly
     legend.margin = margin(t = 10)    # Adds a little breathing room above the legend
   )
@@ -329,6 +337,14 @@ combined <- (p_bar | p_scatter) +
 ggsave("player_ratings.png", combined,
        width = 16, height = 14, dpi = 150, bg = "white")
 message("Saved → player_ratings.png")
+
+ggsave("player_ratings_leaderboard.png", p_bar + labs(x = NULL, y = NULL),
+       width = 8, height = 10, dpi = 150, bg = "white")
+message("Saved → player_ratings_leaderboard.png")
+
+ggsave("player_ratings_scatter.png", p_scatter + labs(x = NULL, y = NULL),
+       width = 8, height = 8,  dpi = 150, bg = "white")
+message("Saved → player_ratings_scatter.png")
 
 # ── 12. SAVE RATINGS CSV ───────────────────────────────────────────────────────
 rated %>%

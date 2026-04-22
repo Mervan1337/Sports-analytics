@@ -159,13 +159,11 @@ cat("\nOZ avg win%:", round(mean(lb_oz$win_pct), 1), "\n")
 cat("DZ avg win%:", round(mean(lb_dz$win_pct), 1), "\n\n")
 
 # ── 7. PLOT ────────────────────────────────────────────────────────────────────
-# Win% text color: green (≥55%) / gray (45-55%) / red (<45%) — easy to read for coaches.
-win_pct_color <- function(pct) {
-  dplyr::case_when(
-    pct >= 55 ~ "#00874a",
-    pct <= 45 ~ "#c0392b",
-    TRUE      ~ "gray35"
-  )
+select_three <- function(idx) {
+  n <- length(idx)
+  if (n == 0) return(integer(0))
+  if (n <= 3) return(idx)
+  c(idx[1], idx[ceiling(n / 2)], idx[n])
 }
 
 make_panel <- function(data, zone_label, min_fo_label, n = TOP_N) {
@@ -179,41 +177,51 @@ make_panel <- function(data, zone_label, min_fo_label, n = TOP_N) {
     arrange(impact_score) %>%
     mutate(
       label     = factor(as.character(playerid), levels = as.character(playerid)),
-      bar_fill  = ifelse(impact_score >= 0, "#00b894", "#d63031"),
-      txt_color = win_pct_color(win_pct),
+      bar_fill  = ifelse(impact_score >= 0, "#00b894", "#8B1A1A"),
       txt_hjust = ifelse(impact_score >= 0, -0.1, 1.1)
     )
 
   divider_y <- sum(plot_data$.src == "bottom") + 0.5
 
-  # Build plot — can't use aes(color) per-row in geom_text directly,
-  # so loop over unique colors and layer them.
+  # 6 annotated players: top/mid/bottom of each half
+  annot_idx <- unique(c(
+    select_three(which(plot_data$.src == "bottom")),
+    select_three(which(plot_data$.src == "top"))
+  ))
+  fo_annot <- plot_data[annot_idx, ] %>%
+    filter(abs(impact_score) >= 0.001) %>%
+    mutate(fo_label = sprintf("%.0f", 1 / abs(impact_score)))
+
   p <- ggplot(plot_data, aes(x = impact_score, y = label)) +
     geom_col(aes(fill = bar_fill), width = 0.72, show.legend = FALSE) +
     geom_hline(yintercept = divider_y, color = "gray50", linewidth = 0.6, linetype = "dashed") +
     geom_vline(xintercept = 0, color = "gray30", linewidth = 0.5) +
     scale_fill_identity() +
-    scale_x_continuous(expand = expansion(mult = c(0.2, 0.2))) +
-    labs(
-      title    = zone_label,
-      subtitle = sprintf("min. %s faceoffs in zone · top & bottom %d", min_fo_label, n),
-      x = "Impact score (leverage-weighted net xG per faceoff)", y = NULL
-    ) +
+    scale_x_continuous(expand = expansion(mult = c(0.22, 0.22))) +
+    labs(x = NULL, y = NULL) +
     theme_minimal(base_size = 12) +
     theme(
-      plot.title         = element_text(face = "bold", size = 13),
-      plot.subtitle      = element_text(size = 9, color = "gray40"),
+      text               = element_text(face = "bold", color = "gray10"),
       panel.grid.major.y = element_blank()
     )
 
-  # Add win% labels colored by performance — one geom_text per color group
-  for (col in unique(plot_data$txt_color)) {
-    sub <- filter(plot_data, txt_color == col)
-    p <- p + geom_text(
-      data  = sub,
-      aes(label = sprintf("%.0f%% win", win_pct), hjust = txt_hjust),
-      size  = 2.8, color = col, inherit.aes = TRUE
-    )
+  p <- p + geom_text(
+    data  = plot_data,
+    aes(label = sprintf("%.0f%% win", win_pct), hjust = txt_hjust),
+    size  = 3.2, color = "black", fontface = "bold", inherit.aes = TRUE
+  )
+
+  if (nrow(fo_annot) > 0) {
+    fo_pos <- filter(fo_annot, impact_score >= 0)
+    fo_neg <- filter(fo_annot, impact_score <  0)
+    if (nrow(fo_pos) > 0)
+      p <- p + geom_text(data = fo_pos,
+        aes(x = impact_score / 2, y = label, label = fo_label),
+        size = 3.0, color = "black", fontface = "bold", hjust = 0.5, inherit.aes = FALSE)
+    if (nrow(fo_neg) > 0)
+      p <- p + geom_text(data = fo_neg,
+        aes(x = impact_score / 2, y = label, label = fo_label),
+        size = 3.0, color = "white", fontface = "bold", hjust = 0.5, inherit.aes = FALSE)
   }
   p
 }
@@ -222,21 +230,9 @@ p_oz <- make_panel(lb_oz, "Offensive Zone", MIN_FO_OZ)
 p_nz <- make_panel(lb_nz, "Neutral Zone",   MIN_FO_NZ)
 p_dz <- make_panel(lb_dz, "Defensive Zone", MIN_FO_DZ)
 
-annotation <- plot_annotation(
-  title    = "Faceoff Impact Score Leaderboard — by Zone (10-second window)",
-  subtitle = paste0(
-    "Impact = (leverage-weighted xG created when won - xG conceded when lost) / faceoffs in zone\n",
-    "Leverage: score situation · period · power play · zone (endzone x1.3)  ·  green text ≥ 55% win  ·  red text ≤ 45% win"
-  ),
-  theme = theme(
-    plot.title    = element_text(size = 15, face = "bold"),
-    plot.subtitle = element_text(size = 9,  color = "gray35")
-  )
-)
-
 # Combined — all three zones side by side
 ggsave("faceoff_impact_leaderboard_10s.png",
-       p_oz | p_nz | p_dz + annotation,
+       p_oz | p_nz | p_dz,
        width = 18, height = 10, dpi = 150, bg = "white")
 message("Saved: faceoff_impact_leaderboard_10s.png")
 
@@ -246,7 +242,7 @@ for (info in list(
   list(plot = p_nz, file = "faceoff_impact_leaderboard_nz_10s.png"),
   list(plot = p_dz, file = "faceoff_impact_leaderboard_dz_10s.png")
 )) {
-  ggsave(info$file, info$plot + annotation,
+  ggsave(info$file, info$plot,
          width = 8, height = 10, dpi = 150, bg = "white")
   message("Saved: ", info$file)
 }
