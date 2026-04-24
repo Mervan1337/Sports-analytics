@@ -236,13 +236,25 @@ ggsave("faceoff_impact_leaderboard_10s.png",
        width = 18, height = 10, dpi = 150, bg = "white")
 message("Saved: faceoff_impact_leaderboard_10s.png")
 
-# Individual zone files
+# Individual zone files — no axis labels
 for (info in list(
   list(plot = p_oz, file = "faceoff_impact_leaderboard_oz_10s.png"),
   list(plot = p_nz, file = "faceoff_impact_leaderboard_nz_10s.png"),
   list(plot = p_dz, file = "faceoff_impact_leaderboard_dz_10s.png")
 )) {
-  ggsave(info$file, info$plot,
+  ggsave(info$file, info$plot + labs(x = NULL, y = NULL),
+         width = 8, height = 10, dpi = 150, bg = "white")
+  message("Saved: ", info$file)
+}
+
+# Individual zone files — with axis labels
+x_label <- "Impact score (leverage-weighted net xG per faceoff)"
+for (info in list(
+  list(plot = p_oz, file = "faceoff_impact_leaderboard_oz_10s_labeled.png"),
+  list(plot = p_nz, file = "faceoff_impact_leaderboard_nz_10s_labeled.png"),
+  list(plot = p_dz, file = "faceoff_impact_leaderboard_dz_10s_labeled.png")
+)) {
+  ggsave(info$file, info$plot + labs(x = x_label),
          width = 8, height = 10, dpi = 150, bg = "white")
   message("Saved: ", info$file)
 }

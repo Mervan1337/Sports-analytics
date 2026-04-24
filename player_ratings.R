@@ -342,9 +342,17 @@ ggsave("player_ratings_leaderboard.png", p_bar + labs(x = NULL, y = NULL),
        width = 8, height = 10, dpi = 150, bg = "white")
 message("Saved → player_ratings_leaderboard.png")
 
+ggsave("player_ratings_leaderboard_labeled.png", p_bar,
+       width = 8, height = 10, dpi = 150, bg = "white")
+message("Saved → player_ratings_leaderboard_labeled.png")
+
 ggsave("player_ratings_scatter.png", p_scatter + labs(x = NULL, y = NULL),
        width = 8, height = 8,  dpi = 150, bg = "white")
 message("Saved → player_ratings_scatter.png")
+
+ggsave("player_ratings_scatter_labeled.png", p_scatter,
+       width = 8, height = 8,  dpi = 150, bg = "white")
+message("Saved → player_ratings_scatter_labeled.png")
 
 # ── 12. SAVE RATINGS CSV ───────────────────────────────────────────────────────
 rated %>%
